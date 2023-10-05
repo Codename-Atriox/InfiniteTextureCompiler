@@ -8,10 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="directxtex_uwp" Version="2023.9.6.1" />
-    <PackageReference Include="SharpDX" Version="4.2.0" />
-    <PackageReference Include="SharpDX.Direct2D1" Version="4.2.0" />
-    <PackageReference Include="SharpDX.Direct3D11" Version="4.2.0" />
+    <ProjectReference Include="..\TagFramework\TagFramework.csproj" />
   </ItemGroup>
 
   <ItemGroup>
