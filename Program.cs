@@ -1,4 +1,5 @@
 ﻿
+using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Imaging;
 using Infinite_module_test;
@@ -8,73 +9,57 @@ namespace InfiniteTextureCompiler
 {
     internal class Program
     {
-        static void Main(string[] args)
-        {
+        static void Main(string[] args) { 
+            Console.WriteLine("Input source image path");
+            string? input_path = Console.ReadLine();
+            if (string.IsNullOrEmpty(input_path)) throw new Exception("bad input");
 
-            Console.WriteLine("Hello, World!");
-        }
-        public class tagfiles{
-            public byte[] bytes;
-            public List<KeyValuePair<byte[], bool>> resource_list;
-        }
-        static public tagfiles get_tagbytes_with_resources(string tag_path){
-            tagfiles result = new();
+            Console.WriteLine("Input destination bitm path");
+            string? output_path = Console.ReadLine();
+            if (string.IsNullOrEmpty(output_path)) throw new Exception("bad input");
 
-            if (!File.Exists(tag_path)) throw new Exception("file does not exist");
+            Console.WriteLine("Input desired TagID (unsigned integer)");
+            string? tagID = Console.ReadLine();
+            if (string.IsNullOrEmpty(tagID)) throw new Exception("bad input");
+            uint new_tagid = Convert.ToUInt32(tagID);
 
-            using (FileStream fs = new FileStream(tag_path, FileMode.Open)){
-                byte[] bytes = new byte[4];
-                fs.Read(bytes, 0, 4);
-                if (!bytes.SequenceEqual(new byte[] { 0x75, 0x63, 0x73, 0x68 }))// fail via file not a tag file
-                    throw new Exception("not a tag file");
-            }
-            // check to see if the name is a resource file name
-            if (tag_path.Contains("_res_")) throw new Exception("tag file appears to be resource");
-            
-            // lets first get a list of all the resource file that this guy probably owns
-            var folder = Path.GetDirectoryName(tag_path);
-            string tag_file_name = Path.GetFileName(tag_path);
-            result.resource_list = new();
-
-            foreach (var item in Directory.GetFiles(folder)){
-                string file_name = Path.GetFileName(item);
-                if (file_name.Length > tag_file_name.Length + 4 && file_name.StartsWith(tag_file_name)){
-                    // get index of file, just incase the function that retrives all the files doesn't do it alphabetically
-                    // then either insert or add 
-                    try{string resource_number = file_name.Substring(tag_file_name.Length + 5);
-                        int resource_index = Convert.ToInt32(resource_number);
-                        byte[] resource_bytes = File.ReadAllBytes(item);  
-                        // test whether the first 4 bytes are the 'hscu' magic (or whatever its supposed to be)
-                        bool is_standalone_resource = resource_bytes[0..4].SequenceEqual(new byte[] { 0x75, 0x63, 0x73, 0x68 });
-                        // pop it at the end if the currently index is too high (this is probably a terrible idea)
-                        if (resource_index >= result.resource_list.Count) result.resource_list.Add(new KeyValuePair<byte[], bool>(resource_bytes, is_standalone_resource));
-                        else result.resource_list.Insert(resource_index, new KeyValuePair<byte[], bool>(resource_bytes, is_standalone_resource));
-                    }catch {} // skip bad resources
-                }
-            }
-            // anomaly check // make sure all entries are of either type, else this will become very difficult to manage
-            if (result.resource_list.Count > 0){
-                bool inital = result.resource_list[0].Value;
-                foreach (var item in result.resource_list)
-                    if (item.Value != inital) throw new Exception("mismatching resource types");
-            }
-            
-            result.bytes = File.ReadAllBytes(tag_path);
-            return result;
+            Console.WriteLine("beginning conversion process...");
+            convert_image(input_path, output_path, new_tagid);
+            Console.WriteLine("process complete.");
         }
         static tag load_tag(string file){
-            tagfiles files = get_tagbytes_with_resources(file);
-            tag test = new tag(files.resource_list);
-            if (!test.Load_tag_file(files.bytes)) throw new Exception("failed to load tag");
+            if (!File.Exists(file)) throw new Exception("file does not exist");
+            byte[] file_bytes = File.ReadAllBytes(file);
+
+            tag test = new tag(new List <KeyValuePair<byte[], bool>> ()); // apparently we do NOT support null, despite declaring it as nullable (this is for compiling at least)
+            if (!test.Load_tag_file(file_bytes)) throw new Exception("failed to load tag");
             return test;
         }
 
-        static void convert_image()
-        {
-            System.Drawing.Image image1 = System.Drawing.Image.FromFile(file);
-            var v = image1.PixelFormat;
+        static void convert_image(string image_path, string output_path, uint tagid){
+            //System.Drawing.Image image1 = System.Drawing.Image.FromFile(image_path);
+            //var v = image1.PixelFormat;
+            //var pixels = image1.;
 
+            Bitmap bmp = new Bitmap(image_path);
+            //Rectangle rect = new Rectangle(0, 0, bmp.Width, bmp.Height);
+            BitmapData rawOriginal = bmp.LockBits(new Rectangle(0, 0, bmp.Width, bmp.Height), ImageLockMode.ReadWrite, PixelFormat.Format32bppRgb);
 
+            int origByteCount = rawOriginal.Stride * rawOriginal.Height;
+            byte[] origBytes = new byte[origByteCount];
+            System.Runtime.InteropServices.Marshal.Copy(rawOriginal.Scan0, origBytes, 0, origByteCount);
+
+            // we now copy over this information to the loaded tag
+            tag bitmap_tag = load_tag("template\\template.bitm");
+            bitmap_tag.set_tagID(tagid); // we have to update the tagID, as we're going to have the template set to -1
+            bitmap_tag.set_number("bitmaps[0].width", bmp.Width.ToString());
+            bitmap_tag.set_number("bitmaps[0].sourceWidth", bmp.Width.ToString());
+            bitmap_tag.set_number("bitmaps[0].height", bmp.Height.ToString());
+            bitmap_tag.set_number("bitmaps[0].sourceHeight", bmp.Height.ToString());
+            bitmap_tag.set_datablock("bitmaps[0].bitmap resource handle.pixels", origBytes);
+            tag.compiled_tag output = bitmap_tag.compile();
+            // we aren't going to output resources with this, so we only need to worry about spitting out the main file
+            File.WriteAllBytes(output_path, output.tag_bytes);
         }
     }
 }
